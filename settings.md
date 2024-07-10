@@ -18,7 +18,7 @@ sudo apt update
 ```
 ```sh
 # Установка основных зависимостей DPDK
-sudo apt-get install -y build-essential linux-headers-$(uname -r) gcc make cmake pkg-config libpcap-dev libnuma-dev libelf-dev libdwarf-dev python3-pyelftools meson ninja-build libssl-dev
+sudo apt-get install -y build-essential linux-headers-$(uname -r) gcc make cmake pkg-config libpcap-dev libnuma-dev libelf-dev libdwarf-dev python3-pyelftools meson ninja-build libssl-dev libnl-3-dev libudev-dev
 ```
 
 ```sh
@@ -78,12 +78,17 @@ sudo ./usertools/dpdk-devbind.py --bind=uio_pci_generic <PCI_ADDRESS>
 
 Для vfio-pci:
 ```sh
-sudo dpdk-devbind --bind=vfio-pci <PCI_ADDRESS>
+sudo ./usertools/dpdk-devbind.py --bind=vfio-pci <PCI_ADDRESS>
 ```
 
 Проверьте статус привязки:
 ```sh
 sudo ./usertools/dpdk-devbind.py --status
+```
+
+Отвязать:
+```sh
+sudo ./usertools/dpdk-devbind.py --unbind <PCI_ADDRESS>
 ```
 
 ### Обеспечение достаточного выделения hugepages
