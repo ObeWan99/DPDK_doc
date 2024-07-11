@@ -16,6 +16,7 @@
 ```sh
 sudo apt update
 ```
+
 ```sh
 # Установка основных зависимостей DPDK
 sudo apt-get install -y build-essential linux-headers-$(uname -r) gcc make cmake pkg-config libpcap-dev libnuma-dev libelf-dev libdwarf-dev python3-pyelftools meson ninja-build libssl-dev libnl-3-dev libudev-dev
@@ -23,26 +24,49 @@ sudo apt-get install -y build-essential linux-headers-$(uname -r) gcc make cmake
 
 ```sh
 tar xJf dpdk-<version>.tar.xz
-```
-
-```sh
 cd dpdk-<version>
 ```
 
-Создавайте библиотеки, драйверы и тестовые приложения:
+Для настройки сборки DPDK используйте:
 ```sh
-meson setup <options> build
+meson setup build
 ```
 
-Чтобы включить примеры в сборку, замените команду meson на:
+или, чтобы включить примеры в сборку, замените команду meson на:
 ```sh
 meson setup -Dexamples=all build
 ```
 
+После настройки для сборки и установки DPDK в масштабах всей системы используйте:
 ```sh
-ninja -C build
+cd build
+ninja
+sudo meson install
+sudo ldconfig
 ```
 
+Последние две команды, указанные выше, обычно необходимо запускать от имени пользователя root, при этом шаг установки meson копирует созданные объекты в их конечные системные расположения, а последний шаг заставляет динамический загрузчик ld.so обновить свой кэш для учета новых объектов.
+
+***В некоторых дистрибутивах Linux, таких как Fedora или Redhat, пути в /usr/local не входят в пути по умолчанию для загрузчика. Поэтому в этих дистрибутивах /usr/local/lib и /usr/local/lib64 следует добавить в файл в /etc/ld.so.conf.d/ перед запуском ldconfig .***
+
+Чтобы решить эту проблему, вам необходимо добавить директории /usr/local/lib и /usr/local/lib64 в конфигурацию ld.so. Это делается следующим образом:
+
+Создайте файл с любым именем (например, local.conf) в директории /etc/ld.so.conf.d/:
+```sh
+sudo touch /etc/ld.so.conf.d/local.conf
+```
+
+Откройте файл local.conf в текстовом редакторе и добавьте следующие строки:
+```sh
+/usr/local/lib
+/usr/local/lib64
+```
+Эти строки указывают ld.so, что он должен искать библиотеки в этих директориях.
+
+Сохраните файл и выполните команду ldconfig:
+```sh
+sudo ldconfig
+```
 
 # Настройка dpdk:
 
@@ -59,6 +83,11 @@ sudo modprobe uio_pci_generic
 sudo modprobe vfio-pci
 ```
 
+Режим VFIO без IOMMU:
+```sh
+sudo modprobe vfio enable_unsafe_noiommu_mode=1
+```
+
 ### Привязка сетевой карты
 
 Узнать PCI адрес вашей сетевой карты Virtio:
@@ -68,7 +97,7 @@ lspci | grep Eth
 
 Отключение сетевого интерфейса:
 ```sh
-sudo ifconfig eth1 down
+sudo ifconfig <interface> down
 ```
 
 Теперь привяжем сетевую карту к одному из этих драйверов. Используйте утилиту dpdk-devbind для этого. В комплекте с DPDK идет эта утилита:
@@ -90,6 +119,8 @@ sudo ./usertools/dpdk-devbind.py --status
 ```sh
 sudo ./usertools/dpdk-devbind.py --unbind <PCI_ADDRESS>
 ```
+
+***После привязки интерфейса к DPDK, он больше не виден стандартными сетевыми утилитами. Вы должны использовать DPDK-приложения и утилиты для проверки состояния и работы интерфейса. Для назначения IP-адресов и работы с ними, вам нужно настроить соответствующие структуры данных и логику в ваших DPDK-приложениях.***
 
 ### Обеспечение достаточного выделения hugepages
 
@@ -138,70 +169,4 @@ echo "nodev /mnt/huge hugetlbfs defaults 0 0" >> /etc/fstab
 echo "vm.nr_hugepages=1024" >> /etc/sysctl.conf
 sysctl -p
 ```
-
-# Проверка работы (Дима, не делай, положишь отдел)
-
-Запустите testpmd:
-```sh
-sudo ./build/app/dpdk-testpmd -l 0-3 -n 4 -- --portmask=0x1 --nb-cores=2 --auto-start
-```
-
-Параметры:
-
-- -l 0-3: Использовать CPU ядра 0, 1, 2, 3.
-
-- -n 4: Использовать 4 канала памяти.
-
-- --portmask=0x1: Задействовать первый порт (0000:00:13.0).
-
-- --nb-cores=2: Использовать 2 ядра.
-
-- --auto-start: Автоматически запускать пакеты.
-
-С другого хоста или из другого терминала на той же машине отправьте ping:
-```sh
-ping <IP-адрес интерфейса>
-```
-
-В консоли testpmd используйте команду для отображения статистики портов:
-```sh
-testpmd> show port stats all
-```
-
-# А тут может и не упадёт 
-
-```sh
-sudo ./build/app/dpdk-testpmd -l 0-1 -n 4 -- --portmask=0x1 --nb-cores=1 --forward-mode=io
-```
-
-Объяснение параметров:
-
-    -l 0-1: Использование ядер 0 и 1.
-    -n 4: Количество каналов памяти (memory channels).
-    --portmask=0x1: Маска портов для использования (порт 0).
-    --nb-cores=1: Количество ядер для обработки пакетов.
-    --forward-mode=io: Режим форвардинга пакетов (IO mode).
-
-Запуск форвардинга:
-```sh
-start
-```
-
-Проверка статистики:
-```sh
-show port stats all
-```
-
-Остановка форвардинга:
-```sh
-stop
-```
-
-Выход:
-```sh
-quit
-```
-
-
-### После привязки интерфейса к DPDK, он больше не виден стандартными сетевыми утилитами. Вы должны использовать DPDK-приложения и утилиты для проверки состояния и работы интерфейса. Для назначения IP-адресов и работы с ними, вам нужно настроить соответствующие структуры данных и логику в ваших DPDK-приложениях.
 
